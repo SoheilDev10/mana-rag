@@ -1,0 +1,9 @@
+.env
+
+mana_rag_db.db
+
+documents/
+
+chroma_db_e5/
+
+__pycache__/
