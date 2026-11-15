@@ -202,7 +202,7 @@ def rewrite_query(question, chat_history):
 
     تاریخچه چت:
     
-    {"بدون تاریخچه" | chat_history}
+    {chat_history}
     """
     response = llm.invoke(prompt)
     
@@ -375,10 +375,12 @@ def ask(question, history):
     query = rewrite_query(question, history)
 
     filter_data = get_filter_with_llm(query)
+    
     if not filter_data["need_retrieval"]:
         return "متاسفانه به سوالات غیر مرتبط پاسخی نمی توانم بدم!"
 
     context = create_context(query, filter_data, use_filter=True)
+    
     context_check = check_context(question, context)
 
     if not context_check["is_relevant"]:
@@ -407,5 +409,7 @@ def ask(question, history):
     سوال کاربر:
     {question}
     """
-    return llm.invoke(prompt).content
+    response = llm.invoke(prompt)
+    
+    return response.content
 

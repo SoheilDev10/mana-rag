@@ -16,7 +16,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.API_NAME, debug=settings.DEBUG, lifespan=lifespan)
+app = FastAPI(
+ title=settings.API_NAME,
+ debug=settings.DEBUG, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,6 +53,7 @@ def ask_question(data: ChatRequest, db: Session = Depends(get_db)):
         session = db.query(Sessions).filter(Sessions.id == data.session_id).first()
         if session is None:
             raise HTTPException(status_code=404, detail="نشست مورد نظر پیدا نشد!")
+        
         history = get_chat_history(db, session.id)
 
     # ۲) پاسخ RAG
@@ -66,7 +69,9 @@ def ask_question(data: ChatRequest, db: Session = Depends(get_db)):
 
     # ۳) ذخیره پیام
     message = Messages(
-        question=data.question, answer=answer, session_id=session.id
+        question=data.question,
+        answer=answer,
+        session_id=session.id
     )
     try:
         db.add(message)
