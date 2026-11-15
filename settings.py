@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "ollama"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
     OLLAMA_MODEL: str = "qwen2.5:3b"
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
     API_NAME: str = "mana-rag-api"
     DEBUG: bool = False
     DATABASE_URL: str = f"sqlite:///{(BASE_DIR / 'mana_rag_db.db').as_posix()}"

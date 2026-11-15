@@ -18,6 +18,7 @@ import json
 import re
 from pathlib import Path
 from settings import settings
+from langchain_groq import ChatGroq
 import chromadb
 from dotenv import load_dotenv
 import urllib.request
@@ -80,34 +81,44 @@ class OllamaLLM:
 
 
 if settings.LLM_PROVIDER == "groq":
-    from langchain_groq import ChatGroq
-    llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0)
+        
+    llm = ChatGroq(model=settings.GROQ_MODEL, temperature=0)
+    
 elif settings.LLM_PROVIDER == "ollama":
+    
     llm = OllamaLLM()
+    
 else:
     llm = None  # حالت none: فقط جستجو، بدون مدل زبانی
+    
 embedder = SentenceTransformer(EMBED_MODEL)
 
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+
 collection = chroma_client.get_or_create_collection(
     name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
 )
 
-def embed_passages(texts):
+def embed_passages(documents):
     """E5: برای سند پیشوند passage:"""
-    return embedder.encode(
-        ["passage: " + t for t in texts], normalize_embeddings=True
+    text_embeddings = embedder.encode(
+        ["passage: " + text for text in documents], normalize_embeddings=True
     ).tolist()
+    
+    return text_embeddings
 
 
 def embed_query(text):
     """E5: برای سوال پیشوند query:"""
-    return embedder.encode("query: " + text, normalize_embeddings=True).tolist()
+    query_embeddings = embedder.encode("query: " + text, normalize_embeddings=True).tolist()
+    
+    return query_embeddings
 
 
 def build_index():
     """فایل‌های documents/*.txt را چانک کرده و با upsert در Chroma ذخیره می‌کند."""
     splitter = RecursiveCharacterTextSplitter(chunk_size=150, chunk_overlap=30)
+    
     ids, docs, metas = [], [], []
 
     for file_path in sorted(DOCUMENTS_PATH.glob("*.txt")):
@@ -116,15 +127,18 @@ def build_index():
             print(f"[warn] {file_path.name} در type_metadatas نیست؛ رد شد.")
             continue
 
-        text = file_path.read_text(encoding="utf-8")
-        for index, chunk in enumerate(splitter.split_text(text)):
+        texts = file_path.read_text(encoding="utf-8")
+        
+        chunks = splitter.split_text(texts)
+        
+        for index, chunk in enumerate(chunks):
             ids.append(f"{file_path.stem}_chunk_{index}")
             docs.append(chunk)
             metas.append({
                 "source": file_path.name,
                 "chunk_index": index,
                 "category": info["category"],
-                "type": info["type"],
+                "type": info["type"]
             })
 
     if not docs:
@@ -148,6 +162,7 @@ def parse_json(text, default):
     except Exception:
         return default
 
+#بازنویسی و بهبود سوال کاربر
 
 def rewrite_query(question, chat_history):
     prompt = f"""
@@ -182,12 +197,16 @@ def rewrite_query(question, chat_history):
     شماره تماس شرکت
 
     سوال کاربر:
+    
     {question}
 
     تاریخچه چت:
-    {chat_history}
+    
+    {"بدون تاریخچه" | chat_history}
     """
-    return llm.invoke(prompt).content.strip()
+    response = llm.invoke(prompt)
+    
+    return response.content
 
 
 def get_filter_with_llm(question):
@@ -246,14 +265,19 @@ def get_filter_with_llm(question):
     دقت کن که بدون هیچ توضیح اضافه ای فقط خروجی رو باید برگردونی.
 
     سوال کاربر:
+    
     {question}
     """
     result = parse_json(
         llm.invoke(prompt).content, {"type": None, "need_retrieval": True}
     )
+    
     if result.get("type") not in ALLOWED_TYPES:
+        
         result["type"] = None
+        
     result["need_retrieval"] = bool(result.get("need_retrieval", True))
+    
     return result
 
 
@@ -261,22 +285,33 @@ def create_context(question, filter_data, use_filter):
     if collection.count() == 0:
         return ""
 
-    kwargs = {}
     if use_filter and filter_data.get("type") is not None:
-        kwargs["where"] = {"type": filter_data["type"]}
+        
+     type_query = {"type" : filter_data["type"]}
 
-    results = collection.query(
-        query_embeddings=[embed_query(question)],
-        n_results=min(N_RESULTS, collection.count()),
-        **kwargs,
-    )
+     results = collection.query(
+         query_embeddings=[embed_query(question)],
+         n_results=min(N_RESULTS, collection.count()),
+         where=type_query,
+     )
+    
+    else:
+        results = collection.query(
+            query_embeddings=[embed_query(question)],
+            n_results=min(N_RESULTS,collection.count())
+        )
 
-    nearest = [
-        doc
-        for doc, dist in zip(results["documents"][0], results["distances"][0])
-        if dist <= DISTANCE_THRESHOLD
-    ]
+    nearest = []
+    
+    for doc,dis in zip(
+        results["documents"][0],
+        results["distances"][0]
+    ):
+        if dis<=DISTANCE_THRESHOLD:
+            nearest.append(doc)
+    
     context="\n-".join(nearest)
+    
     return context
 
 
@@ -300,13 +335,17 @@ def check_context(question, context):
     دقت کن که باید بدون هیچ توضیح اضافه دیگه ای مقدار رو برگردونی.
 
     context:
+    
     {context}
 
     سوال کاربر:
+    
     {question}
     """
     result = parse_json(llm.invoke(prompt).content, {"is_relevant": False})
+    
     result["is_relevant"] = bool(result.get("is_relevant", False))
+    
     return result
 
 
@@ -319,17 +358,18 @@ def get_chat_history(db: Session, session_id: int):
         .limit(HISTORY_LIMIT)
         .all()
     )[::-1]
+    
     return json.dumps(
         [{"question": m.question, "answer": m.answer} for m in messages],
         ensure_ascii=False,
     )
-
 
 def ask(question, history):
     if llm is None:
         context = create_context(question, {}, use_filter=False)
         if not context.strip():
             return "متاسفانه اطلاعات موجود درباره این سوال را ندارم!"
+        
         return "اطلاعات مرتبط پیدا شده:\n-" + context
 
     query = rewrite_query(question, history)
