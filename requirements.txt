@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+langchain-groq
+chromadb
+python-dotenv
+langchain-text-splitters
+sentence-transformers
+sqlalchemy
+pydantic
+pydantic-settings
