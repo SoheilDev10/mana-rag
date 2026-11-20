@@ -24,6 +24,7 @@ class Sessions(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(50), nullable=False)
     client_id = Column(String(100), nullable=False, index=True)
+    
     message = relationship("Messages", back_populates="session")
 
 
@@ -34,6 +35,7 @@ class Messages(Base):
     session_id = Column(Integer, ForeignKey("sessions.id"), index=True, nullable=False)
     question = Column(String(500), nullable=False)
     answer = Column(String, nullable=False)
+    
     session = relationship("Sessions", back_populates="message")
 
 
